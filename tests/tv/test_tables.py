@@ -162,6 +162,33 @@ class TestPmt:
         assert pmt.video_pid is None
         assert pmt.audio_pid == 0x0300
 
+    @pytest.mark.parametrize(
+        "descriptor",
+        [
+            bytes([0x6A, 0x01, 0x00]),  # AC-3
+            bytes([0x7A, 0x01, 0x00]),  # Enhanced AC-3
+            bytes([0x7F, 0x01, 0x15]),  # extension: AC-4
+        ],
+        ids=["ac3", "eac3", "ac4"],
+    )
+    def test_dvb_audio_carried_as_private_data_is_audio(self, descriptor: bytes) -> None:
+        # DVB sends AC-3 and its successors as stream type 0x06, identified by a descriptor,
+        # not under the ATSC stream types. A radio service whose only sound is AC-3 would
+        # otherwise have no audio stream and be listed as unplayable.
+        payload = (
+            bytes([0xE3, 0x00, 0xF0, 0x00, 0x06, 0xE3, 0x00, 0xF0, len(descriptor)]) + descriptor
+        )
+        pmt = parse_pmt(section(payload, table_id=0x02, extension=4))
+        assert pmt.streams[0].is_audio
+        assert pmt.audio_pid == 0x0300
+
+    def test_private_data_without_an_audio_descriptor_is_not_audio(self) -> None:
+        # The same stream type carries teletext (0x56) and subtitles (0x59).
+        payload = bytes([0xE3, 0x00, 0xF0, 0x00, 0x06, 0xE3, 0x00, 0xF0, 0x02, 0x56, 0x00])
+        pmt = parse_pmt(section(payload, table_id=0x02, extension=4))
+        assert not pmt.streams[0].is_audio
+        assert pmt.audio_pid is None
+
     def test_programme_descriptors_are_read(self) -> None:
         payload = bytes([0xE2, 0x00, 0xF0, 0x03, 0x09, 0x01, 0xAA])
         pmt = parse_pmt(section(payload, table_id=0x02))

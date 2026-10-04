@@ -249,8 +249,17 @@ class ElementaryStream:
 
     @property
     def is_audio(self) -> bool:
-        """Whether this stream carries sound."""
-        return self.stream_type in _AUDIO_STREAM_TYPES
+        """Whether this stream carries sound.
+
+        DVB does not give AC-3, E-AC-3 or AC-4 a stream type of their own: they travel as PES
+        private data, type 0x06, and a descriptor says which codec it is. The same type also
+        carries teletext and subtitles, so the descriptor is what decides.
+        """
+        if self.stream_type in _AUDIO_STREAM_TYPES:
+            return True
+        if self.stream_type != PES_PRIVATE_DATA_STREAM_TYPE:
+            return False
+        return any(_is_audio_descriptor(descriptor) for descriptor in self.descriptors)
 
     def __str__(self) -> str:
         kind = "video" if self.is_video else "audio" if self.is_audio else "data"
@@ -280,6 +289,42 @@ _AUDIO_STREAM_TYPES: Final = frozenset(
         0x87,  # Enhanced AC-3
     }
 )
+
+
+#: Stream type of PES private data, under which DVB carries AC-3, E-AC-3 and AC-4.
+PES_PRIVATE_DATA_STREAM_TYPE: Final = 0x06
+
+#: Descriptors that mark a private data stream as audio, from EN 300 468 Annex D.
+_AUDIO_DESCRIPTOR_TAGS: Final = frozenset(
+    {
+        0x6A,  # AC-3
+        0x7A,  # Enhanced AC-3
+        0x7B,  # DTS
+        0x7C,  # AAC
+    }
+)
+
+#: The extension descriptor, whose first byte says what it extends.
+EXTENSION_DESCRIPTOR_TAG: Final = 0x7F
+
+#: Extension tags that mark a private data stream as audio.
+_AUDIO_EXTENSION_TAGS: Final = frozenset(
+    {
+        0x0E,  # DTS-HD
+        0x15,  # AC-4
+    }
+)
+
+
+def _is_audio_descriptor(descriptor: Descriptor) -> bool:
+    """Whether a descriptor says the private data stream it describes is audio."""
+    if descriptor.tag in _AUDIO_DESCRIPTOR_TAGS:
+        return True
+    return (
+        descriptor.tag == EXTENSION_DESCRIPTOR_TAG
+        and bool(descriptor.data)
+        and descriptor.data[0] in _AUDIO_EXTENSION_TAGS
+    )
 
 
 @dataclass(frozen=True, slots=True)
