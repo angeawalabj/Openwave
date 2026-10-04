@@ -264,6 +264,30 @@ class TestMultiplexDecoding:
         assert left_separation > 20.0
         assert right_separation > 20.0
 
+    def test_stereo_decoding_follows_the_phase_the_standard_specifies(self) -> None:
+        # Built by hand from ITU-R BS.450 rather than through the simulator, so the decoder and
+        # the generator cannot share a wrong convention. With the pilot and subcarrier as sines,
+        # a reference made by squaring the pilot is a quarter-turn off, the difference signal
+        # demodulates to nothing, and a tone in the left channel comes out equally in both.
+        rate = MPX_SAMPLE_RATE_HZ
+        t = np.arange(int(rate * 0.5)) / rate
+        pilot_rad = 2.0 * np.pi * STEREO_PILOT_HZ * t
+        left = np.sin(2.0 * np.pi * 1000.0 * t)
+        right = np.zeros_like(t)
+        mpx = (
+            0.45 * (left + right) / 2.0
+            + 0.45 * (left - right) / 2.0 * np.sin(2.0 * pilot_rad)
+            + 0.1 * np.sin(pilot_rad)
+        )
+
+        decoded_left, decoded_right = decode_stereo(mpx, sample_rate_hz=rate)
+
+        edge = len(t) // 20
+        separation_db = 20.0 * np.log10(
+            np.std(decoded_left[edge:-edge]) / np.std(decoded_right[edge:-edge])
+        )
+        assert separation_db > 20.0
+
 
 class TestDemodulate:
     def test_it_delivers_audio_at_the_requested_rate(self) -> None:

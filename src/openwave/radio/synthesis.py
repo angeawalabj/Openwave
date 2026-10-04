@@ -192,21 +192,29 @@ class SyntheticFmStation:
         sum_share = STEREO_AUDIO_DEVIATION_SHARE
         diff_share = STEREO_AUDIO_DEVIATION_SHARE
 
+        # ITU-R BS.450 sends the pilot as sin(wt) and the subcarrier as sin(2wt), so both are
+        # cosines delayed by a quarter-turn. The phase matters: a decoder that assumed cosines
+        # would pass against a generator that made the same assumption, and fail on the air.
+        sine = -np.pi / 2.0
         tones = [
             # The sum signal, L+R, transmitted at baseband.
             Tone(freq_hz=left_hz, amplitude=sum_share),
             Tone(freq_hz=right_hz, amplitude=sum_share),
             # The pilot, which is the only thing that marks the transmission as stereo.
-            Tone(freq_hz=STEREO_PILOT_HZ, amplitude=STEREO_PILOT_DEVIATION_SHARE),
+            Tone(freq_hz=STEREO_PILOT_HZ, amplitude=STEREO_PILOT_DEVIATION_SHARE, phase_rad=sine),
         ]
 
         # The difference signal, L-R, double-sideband suppressed-carrier on 38 kHz. Expanding
-        # cos(a)cos(b) into [cos(a+b) + cos(a-b)] / 2 puts it in terms of plain sinusoids, which
+        # cos(a)sin(b) into [sin(b+a) + sin(b-a)] / 2 puts it in terms of plain sinusoids, which
         # is what keeps the FM phase integral in closed form.
         for audio_hz, sign in ((left_hz, 1.0), (right_hz, -1.0)):
             half = sign * diff_share / 2.0
-            tones.append(Tone(freq_hz=STEREO_SUBCARRIER_HZ + audio_hz, amplitude=half))
-            tones.append(Tone(freq_hz=STEREO_SUBCARRIER_HZ - audio_hz, amplitude=half))
+            tones.append(
+                Tone(freq_hz=STEREO_SUBCARRIER_HZ + audio_hz, amplitude=half, phase_rad=sine)
+            )
+            tones.append(
+                Tone(freq_hz=STEREO_SUBCARRIER_HZ - audio_hz, amplitude=half, phase_rad=sine)
+            )
         return tones
 
     # -- Generation ---------------------------------------------------------------------------

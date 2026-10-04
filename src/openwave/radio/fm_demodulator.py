@@ -275,9 +275,12 @@ def decode_stereo(mpx: RealSignal, *, sample_rate_hz: float) -> tuple[RealSignal
     pilot, which brings it back down to baseband -- and locked is the important word, because
     the sum and difference have to be in phase to recombine into left and right.
 
-    The 38 kHz reference is built by squaring the extracted pilot. A tone squared has twice the
-    frequency and, more to the point, the right phase, which is why the standard puts the pilot
-    at exactly half the subcarrier.
+    The 38 kHz reference is built from the extracted pilot by doubling its phase, which is why
+    the standard puts the pilot at exactly half the subcarrier. Doubling has to be done on the
+    analytic pilot rather than by squaring the real one. ITU-R BS.450 sends the pilot as
+    ``sin(wt)`` and the subcarrier as ``sin(2wt)``, and ``sin(wt)`` squared is
+    ``(1 - cos(2wt)) / 2``: a reference a quarter-turn away from the subcarrier, against which
+    the difference signal demodulates to nothing and a stereo station comes out mono.
     """
     sum_signal = decode_mono(mpx, sample_rate_hz=sample_rate_hz)
 
@@ -288,10 +291,11 @@ def decode_stereo(mpx: RealSignal, *, sample_rate_hz: float) -> tuple[RealSignal
         high_hz=STEREO_PILOT_HZ + PILOT_FILTER_WIDTH_HZ,
         transition_hz=PILOT_FILTER_WIDTH_HZ * 2.0,
     )
-    # Squaring doubles the frequency: cos(x)^2 = (1 + cos(2x)) / 2. Removing the mean strips the
-    # constant and leaves a 38 kHz tone phase-locked to the pilot.
-    doubled = pilot * pilot
-    reference = doubled - np.mean(doubled)
+    # The analytic pilot is exp(j(wt - pi/2)) for a pilot of sin(wt). Squaring it doubles the
+    # phase to exp(j(2wt - pi)) = -exp(j2wt), whose imaginary part, negated, is sin(2wt): the
+    # subcarrier exactly as the standard places it.
+    analytic = scipy_signal.hilbert(pilot)
+    reference = -np.imag(analytic * analytic)
     reference = _band_pass(
         reference,
         sample_rate_hz=sample_rate_hz,
