@@ -523,6 +523,20 @@ class Nit:
             numbers.update(entry.logical_channels)
         return numbers
 
+    def logical_channels_for(self, transport_stream_id: int) -> dict[int, int]:
+        """The logical channel numbers of one multiplex.
+
+        A service identifier is only unique within its transport stream, so two multiplexes of
+        the same network may both have a service 0x0101 and number them differently. Looking a
+        service up in :attr:`logical_channels` would then give whichever multiplex came last.
+        Falls back to that merged view when the NIT does not describe this multiplex, since a
+        number that is probably right beats none.
+        """
+        for entry in self.transport_streams:
+            if entry.transport_stream_id == transport_stream_id:
+                return dict(entry.logical_channels)
+        return self.logical_channels
+
     def __str__(self) -> str:
         label = self.network_name or f"network {self.network_id:#06x}"
         return f"NIT for {label}: {len(self.transport_streams)} multiplexes"

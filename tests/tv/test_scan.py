@@ -23,7 +23,7 @@ from openwave.tv.synthesis import (
     build_transport_stream,
     demo_multiplex,
 )
-from openwave.tv.tables import ServiceType
+from openwave.tv.tables import Nit, ServiceType, TransportStreamEntry
 from openwave.tv.ts import iter_packets
 
 #: Quick settings: the simulator locks instantly, so a long timeout only slows the tests.
@@ -193,6 +193,33 @@ class TestChannelList:
         tables = parse_mux(build_transport_stream(demo_multiplex(), repeats=2))
         with pytest.raises(ValueError, match="must be positive"):
             channels_from_tables(tables, mux_freq_hz=0.0)
+
+    def test_channel_numbers_come_from_this_multiplex_not_another(self) -> None:
+        # The NIT describes the whole network, and a service identifier is only unique within
+        # its own multiplex. Another multiplex listed after this one, reusing the same service
+        # identifier under a different number, must not renumber this one's channel.
+        tables = parse_mux(build_transport_stream(demo_multiplex(), repeats=2))
+        assert tables.pat is not None and tables.nit is not None
+        own = next(
+            entry
+            for entry in tables.nit.transport_streams
+            if entry.transport_stream_id == tables.pat.transport_stream_id
+        )
+        clashing = TransportStreamEntry(
+            transport_stream_id=own.transport_stream_id + 1,
+            original_network_id=own.original_network_id,
+            logical_channels={service_id: 900 for service_id in own.logical_channels},
+        )
+        network = Nit(
+            network_id=tables.nit.network_id,
+            network_name=tables.nit.network_name,
+            transport_streams=(own, clashing),
+        )
+        shared = type(tables)(pat=tables.pat, sdt=tables.sdt, nit=network, pmts=tables.pmts)
+
+        channels = channels_from_tables(shared, mux_freq_hz=498e6)
+        numbers = {c.service_id: c.logical_channel for c in channels if c.logical_channel}
+        assert numbers == own.logical_channels
 
 
 class TestChannelModel:

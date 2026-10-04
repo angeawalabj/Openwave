@@ -51,8 +51,8 @@ def channels_from_tables(
 
     named = {entry.service_id: entry for entry in tables.sdt.services} if tables.sdt else {}
     programmes = set(tables.pat.programmes) if tables.pat else set()
-    numbers = tables.nit.logical_channels if tables.nit else {}
     transport_stream_id = _transport_stream_id(tables)
+    numbers = _logical_channels(tables, transport_stream_id)
 
     channels: list[Channel] = []
     for service_id in sorted(programmes | set(named)):
@@ -109,6 +109,20 @@ def _ordering(channel: Channel) -> tuple[int, int]:
     if channel.logical_channel is None:
         return (1, channel.service_id)
     return (0, channel.logical_channel)
+
+
+def _logical_channels(tables: MuxTables, transport_stream_id: int) -> dict[int, int]:
+    """The channel numbers the NIT gives this multiplex's services.
+
+    Only this multiplex's entry is read when its identifier is known: the NIT describes the
+    whole network, and the same service identifier can mean a different channel in another
+    multiplex.
+    """
+    if tables.nit is None:
+        return {}
+    if tables.pat is None and tables.sdt is None:
+        return tables.nit.logical_channels
+    return tables.nit.logical_channels_for(transport_stream_id)
 
 
 def _transport_stream_id(tables: MuxTables) -> int:

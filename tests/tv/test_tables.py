@@ -15,7 +15,9 @@ from openwave.tv.tables import (
     NETWORK_NAME_DESCRIPTOR_TAG,
     SERVICE_DESCRIPTOR_TAG,
     Descriptor,
+    Nit,
     ServiceType,
+    TransportStreamEntry,
     dvb_text,
     find_descriptor,
     parse_descriptors,
@@ -305,6 +307,25 @@ class TestNit:
     def test_logical_channel_numbers_are_read(self) -> None:
         nit = parse_nit(section(self.build_nit_payload(), table_id=0x40))
         assert nit.logical_channels == {1: 1, 2: 2}
+
+    def test_logical_channel_numbers_are_read_per_multiplex(self) -> None:
+        # The same service identifier in two multiplexes is two different services.
+        nit = Nit(
+            network_id=1,
+            transport_streams=(
+                TransportStreamEntry(0x10, 1, logical_channels={0x0101: 1}),
+                TransportStreamEntry(0x20, 1, logical_channels={0x0101: 14}),
+            ),
+        )
+        assert nit.logical_channels_for(0x10) == {0x0101: 1}
+        assert nit.logical_channels_for(0x20) == {0x0101: 14}
+
+    def test_a_multiplex_the_nit_does_not_list_falls_back_to_the_whole_network(self) -> None:
+        nit = Nit(
+            network_id=1,
+            transport_streams=(TransportStreamEntry(0x10, 1, logical_channels={0x0101: 1}),),
+        )
+        assert nit.logical_channels_for(0x99) == {0x0101: 1}
 
     def test_a_truncated_nit_gives_what_was_readable(self) -> None:
         nit = parse_nit(section(b"\xf0", table_id=0x40, extension=0x2000))
